@@ -7,7 +7,7 @@ SetGPO and Validator Scripts for CF25 CASTLE Environment
 - GPO names are suffixed "TC" for test purposes but can be removed so long as all instances of GPO name is updated
 - Expect Validator Script output to fail for GPOs: "Map Network Drives_TC" and "System Update_TC" until requirements below are fulfilled
 
-Additional Requirements:
+# Additional Requirements:
 - SetGPO Script
   - GPO: "Map Network Drives_TC". Integrate filesharePermission&GroupHandler.ps1 into SetGPO Script to fulfill GPO Creation Function #5 (removed due to bugs)
   - GPO: "System Update_TC". Resolve GPO Creation Function #13 which properly instatiates scripts but does not "add" it to GPO in Group Policy Management Module
