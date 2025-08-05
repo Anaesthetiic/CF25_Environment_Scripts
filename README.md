@@ -1,10 +1,10 @@
 # CF25_Environment_Scripts
 SetGPO and Validator Scripts for CF25 CASTLE Environment
 
-# **WIP Last updated: 01 Aug 25**
+# **WIP Last updated: 05 Aug 25**
 
 # Notes
-- GPO names are suffixed "TC" for test purposes but can be removed so long as all instances of GPO name is updated
+- GPO names are suffixed "TC" for test purposes but can be removed so long as all instances of GPO name is updated UPDATE: This only applies to certain scripts. This is not the case for the validator, and the brute force method script.
 - Expect Validator Script output to fail for GPOs: "Map Network Drives_TC" and "System Update_TC" until requirements below are fulfilled
 
 # Additional Requirements
