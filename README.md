@@ -1,7 +1,7 @@
 # CF25_Environment_Scripts
 SetGPO and Validator Scripts for CF25 CASTLE Environment
 
-# **WIP Last updated: 05 Aug 25**
+# **WIP Last updated: 07 Aug 25**
 
 # Notes
 - GPO names are suffixed "TC" for test purposes but can be removed so long as all instances of GPO name is updated UPDATE: This only applies to certain scripts. This is not the case for the validator, and the brute force method script.
