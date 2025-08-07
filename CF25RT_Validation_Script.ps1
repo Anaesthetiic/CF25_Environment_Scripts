@@ -369,4 +369,367 @@ $fileShareValidationScript = {
 if (Test-Connection -ComputerName "ent-srv-fil-001" -Count 1 -Quiet) {
     try {
         $shareResults = Invoke-Command -ComputerName "ent-srv-fil-001" -ScriptBlock $fileShareValidationScript -ErrorAction Stop
-        Write-ValidationResult "IT Share
+        Write-ValidationResult "IT Share Folder: ent-srv-fil-001" $shareResults.ITFolderExists
+        Write-ValidationResult "Engineering Share Folder: ent-srv-fil-001" $shareResults.EngineeringFolderExists
+        Write-ValidationResult "IT SMB Share: ent-srv-fil-001" $shareResults.ITShareExists
+        Write-ValidationResult "Engineering SMB Share: ent-srv-fil-001" $shareResults.EngineeringShareExists
+        Write-ValidationResult "IT Readme File: ent-srv-fil-001" $shareResults.ITReadmeExists
+        Write-ValidationResult "Engineering Doc File: ent-srv-fil-001" $shareResults.EngineeringDocExists
+    } catch {
+        Write-ValidationResult "File Share Validation: ent-srv-fil-001" $false "Remote command failed"
+    }
+} else {
+    Write-ValidationResult "File Share Validation: ent-srv-fil-001" $false "Computer not reachable"
+}
+
+# Test mount/unmount functionality on it-wks-win-003
+$mountTestScript = {
+    try {
+        # Test if we can resolve the share path
+        $sharePath = "\\ENT-SRV-FIL-001\IT"
+        $testResult = Test-Path $sharePath -ErrorAction SilentlyContinue
+        return $testResult
+    } catch {
+        return $false
+    }
+}
+
+if (Test-Connection -ComputerName "it-wks-win-003" -Count 1 -Quiet) {
+    try {
+        $mountResult = Invoke-Command -ComputerName "it-wks-win-003" -ScriptBlock $mountTestScript -ErrorAction Stop
+        Write-ValidationResult "Share Accessibility: it-wks-win-003 → IT Share" $mountResult
+    } catch {
+        Write-ValidationResult "Share Accessibility: it-wks-win-003 → IT Share" $false "Remote command failed"
+    }
+} else {
+    Write-ValidationResult "Share Accessibility: it-wks-win-003 → IT Share" $false "Computer not reachable"
+}
+#endregion
+
+#region 7. Validate Day 4 Tasks (DMZ Delegation)
+Write-Host "`n7. VALIDATING DAY 4 TASKS (DMZ DELEGATION)" -ForegroundColor Yellow
+Write-Host "-" * 45
+
+try {
+    $mailServer = Get-ADComputer -Filter "Name -eq 'dmz-srv-mail-01'" -Properties TrustedForDelegation -ErrorAction Stop
+    
+    if ($mailServer) {
+        Write-ValidationResult "Mail Server Found: dmz-srv-mail-01" $true $mailServer.DistinguishedName
+        Write-ValidationResult "Unconstrained Delegation: dmz-srv-mail-01" $mailServer.TrustedForDelegation
+    } else {
+        Write-ValidationResult "Mail Server Found: dmz-srv-mail-01" $false "Computer account not found"
+    }
+} catch {
+    Write-ValidationResult "DMZ Delegation Validation" $false "Failed to query Active Directory"
+}
+#endregion
+
+#region 8. Validate Chrome Removal
+Write-Host "`n8. VALIDATING CHROME REMOVAL" -ForegroundColor Yellow
+Write-Host "-" * 30
+
+$chromeCheckScript = {
+    $chromePresent = $false
+    
+    # Check common Chrome installation paths
+    $chromePaths = @(
+        "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
+        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+        "${env:LOCALAPPDATA}\Google\Chrome\Application\chrome.exe"
+    )
+    
+    foreach ($path in $chromePaths) {
+        if (Test-Path $path) {
+            $chromePresent = $true
+            break
+        }
+    }
+    
+    # Check if Chrome folders exist
+    $chromeFolders = @(
+        "${env:ProgramFiles}\Google",
+        "${env:ProgramFiles(x86)}\Google",
+        "${env:LOCALAPPDATA}\Google"
+    )
+    
+    $foldersExist = $false
+    foreach ($folder in $chromeFolders) {
+        if (Test-Path $folder) {
+            $foldersExist = $true
+            break
+        }
+    }
+    
+    return @{
+        ChromeExecutableFound = $chromePresent
+        ChromeFoldersFound = $foldersExist
+    }
+}
+
+$workstationComputers = $allComputers | Where-Object { $_ -notlike "*srv*" }
+
+foreach ($computer in $workstationComputers) {
+    if (Test-Connection -ComputerName $computer -Count 1 -Quiet) {
+        try {
+            $chromeResults = Invoke-Command -ComputerName $computer -ScriptBlock $chromeCheckScript -ErrorAction Stop
+            $chromeRemoved = -not $chromeResults.ChromeExecutableFound -and -not $chromeResults.ChromeFoldersFound
+            Write-ValidationResult "Chrome Removed: $computer" $chromeRemoved
+        } catch {
+            Write-ValidationResult "Chrome Check: $computer" $false "Remote command failed"
+        }
+    } else {
+        Write-ValidationResult "Chrome Check: $computer" $false "Computer not reachable"
+    }
+}
+#endregion
+
+#region 9. Validate Login Simulation
+Write-Host "`n9. VALIDATING LOGIN SIMULATION" -ForegroundColor Yellow
+Write-Host "-" * 35
+
+$loginSimulationCheck = {
+    $logFile = "C:\CF25_Login_Simulation.log"
+    
+    $results = @{
+        LogFileExists = (Test-Path $logFile)
+        RecentEntries = $false
+        LogSize = 0
+    }
+    
+    if ($results.LogFileExists) {
+        try {
+            $logContent = Get-Content $logFile -ErrorAction Stop
+            $results.LogSize = $logContent.Count
+            
+            # Check for recent entries (within last day)
+            $yesterday = (Get-Date).AddDays(-1)
+            foreach ($line in $logContent) {
+                if ($line -match "\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}") {
+                    try {
+                        $logDate = [DateTime]::ParseExact($line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss", $null)
+                        if ($logDate -gt $yesterday) {
+                            $results.RecentEntries = $true
+                            break
+                        }
+                    } catch {
+                        # Date parsing failed, continue
+                    }
+                }
+            }
+        } catch {
+            # Error reading log file
+        }
+    }
+    
+    return $results
+}
+
+$userMachineMappings = @{
+    "usr-wks-win-001" = "james.anderson"
+    "it-wks-win-001"  = "anthony.evans"
+    "it-wks-win-002"  = "tiffany.edwards"
+    "it-wks-win-003"  = "jacob.collins"
+    "it-wks-win-004"  = "amber.stewart"
+    "it-wks-win-005"  = "william.sanchez"
+    "hr-wks-win-001"  = "brian.martin"
+    "hr-wks-win-002"  = "lisa.lee"
+    "hr-wks-win-003"  = "jason.walker"
+    "hr-wks-win-004"  = "rachel.hall"
+    "hr-wks-win-005"  = "justin.allen"
+}
+
+foreach ($computer in $userMachineMappings.Keys) {
+    $assignedUser = $userMachineMappings[$computer]
+    if (Test-Connection -ComputerName $computer -Count 1 -Quiet) {
+        try {
+            $loginResults = Invoke-Command -ComputerName $computer -ScriptBlock $loginSimulationCheck -ErrorAction Stop
+            Write-ValidationResult "Login Log File: $computer" $loginResults.LogFileExists
+            Write-ValidationResult "Recent Login Entries: $computer" $loginResults.RecentEntries "$($loginResults.LogSize) total entries"
+        } catch {
+            Write-ValidationResult "Login Simulation: $computer" $false "Remote command failed"
+        }
+    } else {
+        Write-ValidationResult "Login Simulation: $computer" $false "Computer not reachable"
+    }
+}
+#endregion
+
+#region 10. Validate Server File Generation
+Write-Host "`n10. VALIDATING SERVER FILE GENERATION" -ForegroundColor Yellow
+Write-Host "-" * 40
+
+$serverFileValidationScript = {
+    $results = @{
+        SharedFolderExists = (Test-Path "C:\SharedFiles")
+        DepartmentFolders = @{}
+        TotalFiles = 0
+    }
+    
+    if ($results.SharedFolderExists) {
+        $departments = @("HR", "Engineering", "Finance", "IT", "General")
+        
+        foreach ($dept in $departments) {
+            $deptPath = "C:\SharedFiles\$dept"
+            $folderExists = Test-Path $deptPath
+            $results.DepartmentFolders[$dept] = @{
+                Exists = $folderExists
+                FileCount = 0
+            }
+            
+            if ($folderExists) {
+                try {
+                    $files = Get-ChildItem $deptPath -File
+                    $results.DepartmentFolders[$dept].FileCount = $files.Count
+                    $results.TotalFiles += $files.Count
+                } catch {
+                    # Error reading folder
+                }
+            }
+        }
+    }
+    
+    return $results
+}
+
+if (Test-Connection -ComputerName "ent-srv-fil-001" -Count 1 -Quiet) {
+    try {
+        $serverFileResults = Invoke-Command -ComputerName "ent-srv-fil-001" -ScriptBlock $serverFileValidationScript -ErrorAction Stop
+        
+        Write-ValidationResult "Shared Files Root: ent-srv-fil-001" $serverFileResults.SharedFolderExists
+        
+        foreach ($dept in $serverFileResults.DepartmentFolders.Keys) {
+            $deptData = $serverFileResults.DepartmentFolders[$dept]
+            Write-ValidationResult "$dept Department Folder: ent-srv-fil-001" $deptData.Exists "$($deptData.FileCount) files"
+        }
+        
+        Write-ValidationResult "Total Server Files Generated" ($serverFileResults.TotalFiles -gt 0) "$($serverFileResults.TotalFiles) total files"
+        
+    } catch {
+        Write-ValidationResult "Server File Generation: ent-srv-fil-001" $false "Remote command failed"
+    }
+} else {
+    Write-ValidationResult "Server File Generation: ent-srv-fil-001" $false "Computer not reachable"
+}
+#endregion
+
+#region 11. Network Connectivity Summary
+Write-Host "`n11. NETWORK CONNECTIVITY SUMMARY" -ForegroundColor Yellow
+Write-Host "-" * 35
+
+$allTargetComputers = @(
+    "ent-srv-fil-001", "dmz-srv-mail-01",
+    "usr-wks-win-001", "usr-wks-win-002", "usr-wks-win-003", "usr-wks-win-004", "usr-wks-win-005",
+    "it-wks-win-001", "it-wks-win-002", "it-wks-win-003", "it-wks-win-004", "it-wks-win-005",
+    "hr-wks-win-001", "hr-wks-win-002", "hr-wks-win-003", "hr-wks-win-004", "hr-wks-win-005",
+    "eng-wks-win-001", "eng-wks-win-002", "eng-wks-win-003", "eng-wks-win-004", "eng-wks-win-005",
+    "fin-wks-win-001", "fin-wks-win-002", "fin-wks-win-003", "fin-wks-win-004", "fin-wks-win-005"
+)
+
+$connectivitySummary = @{
+    Total = $allTargetComputers.Count
+    Reachable = 0
+    Unreachable = 0
+}
+
+Write-Host "Testing connectivity to all target computers..." -ForegroundColor Gray
+
+foreach ($computer in $allTargetComputers) {
+    if (Test-Connection -ComputerName $computer -Count 1 -Quiet) {
+        $connectivitySummary.Reachable++
+    } else {
+        $connectivitySummary.Unreachable++
+    }
+}
+
+Write-ValidationResult "Total Computers" $true "$($connectivitySummary.Total) computers targeted"
+Write-ValidationResult "Reachable Computers" ($connectivitySummary.Reachable -gt 0) "$($connectivitySummary.Reachable) computers reachable"
+Write-ValidationResult "Unreachable Computers" ($connectivitySummary.Unreachable -eq 0) "$($connectivitySummary.Unreachable) computers unreachable"
+
+$connectivityPercentage = [math]::Round(($connectivitySummary.Reachable / $connectivitySummary.Total) * 100, 2)
+Write-ValidationResult "Network Coverage" ($connectivityPercentage -gt 80) "$connectivityPercentage% connectivity"
+#endregion
+
+#region 12. Security Warnings Validation
+Write-Host "`n12. SECURITY CONFIGURATION WARNINGS" -ForegroundColor Yellow
+Write-Host "-" * 40
+
+Write-Host "⚠️  SECURITY NOTICE: Validating intentionally vulnerable configurations" -ForegroundColor Red
+Write-Host "   → Hardcoded credentials detected in scripts" -ForegroundColor Red
+Write-Host "   → Local administrator passwords set to known values" -ForegroundColor Red
+Write-Host "   → Unconstrained delegation enabled" -ForegroundColor Red
+Write-Host "   → File shares with potentially weak permissions" -ForegroundColor Red
+Write-Host "   → IT users granted extensive local administrator rights" -ForegroundColor Red
+Write-Host ""
+Write-Host "✓ These configurations are INTENTIONAL for cyber exercise purposes" -ForegroundColor Yellow
+Write-Host "✓ Do NOT deploy these configurations in production environments" -ForegroundColor Yellow
+#endregion
+
+#region 13. Generate Final Validation Report
+Write-Host "`n" + "="*80 -ForegroundColor Cyan
+Write-Host "VALIDATION SUMMARY REPORT" -ForegroundColor Cyan
+Write-Host "="*80 -ForegroundColor Cyan
+
+$validationSummary = @"
+CF25 Configuration Validation Summary
+====================================
+Validation Time: $(Get-Date)
+Domain: $DomainName
+Network Coverage: $connectivityPercentage% ($($connectivitySummary.Reachable)/$($connectivitySummary.Total) systems)
+
+Key Validations Performed:
+✓ User group assignments (HR_Staff, IT_Admins)
+✓ Domain Admin membership for tiffany.evans
+✓ IT Admin local administrator rights on target systems
+✓ Individual IT user local admin rights on assigned workstations
+✓ Password changes on it-wks-win-003 and dmz-srv-mail-01
+✓ File cleanup and content generation across all systems
+✓ Chrome removal from workstation computers
+✓ Hardcoded credential script deployment
+✓ File share creation and configuration
+✓ DMZ mail server delegation settings
+✓ Login simulation and logging
+✓ Server file generation for departments
+
+Critical Security Warnings:
+⚠️  This environment contains intentionally vulnerable configurations
+⚠️  Hardcoded credentials present in multiple locations
+⚠️  Known passwords configured for local Administrator accounts
+⚠️  Unconstrained Kerberos delegation enabled
+⚠️  Extensive local administrator privileges granted
+⚠️  File shares configured with exercise-specific permissions
+
+Recommendations:
+1. Verify all unreachable systems and investigate connectivity issues
+2. Test file share access from user workstations
+3. Validate user login capabilities on assigned systems
+4. Confirm Chrome removal completed successfully
+5. Test hardcoded credential script functionality
+6. Verify delegation configuration in ADUC GUI
+7. Monitor systems for proper vulnerability simulation
+
+Environment Status: CONFIGURED FOR CYBER EXERCISE
+Security Level: INTENTIONALLY VULNERABLE
+Production Use: ❌ NOT RECOMMENDED
+
+Log Files:
+- Validation Log: $LogPath
+- Original Deployment Log: C:\CF25_Enrichment.log
+- Summary Report: C:\CF25_Enrichment_Summary.txt
+"@
+
+Write-Host $validationSummary -ForegroundColor Green
+
+# Save validation report
+$validationReportPath = "C:\CF25_Validation_Report.txt"
+$validationSummary | Out-File -FilePath $validationReportPath -Force -Encoding UTF8
+
+Write-Host "`nValidation report saved to: $validationReportPath" -ForegroundColor Cyan
+#endregion
+
+Write-Host "`n" + "="*80 -ForegroundColor Cyan
+Write-Host "CF25 VALIDATION COMPLETED" -ForegroundColor Green
+Write-Host "="*80 -ForegroundColor Cyan
+
+Stop-Transcript
+
+Write-Host "Validation transcript saved to: $LogPath" -ForegroundColor Gray
