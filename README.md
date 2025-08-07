@@ -3,7 +3,9 @@
 - CF25_UserAssign_BF_Method.ps1
   - Adds and assigns users to domain groups
 
-# Deprecated
+<br><br><br>
+
+# Deprecated Items
 SetGPO and Validator Scripts for CF25 CASTLE Environment
 
 ## **WIP Last updated: 07 Aug 25**
